@@ -945,7 +945,7 @@
         } else if (provider === 'vertex') {
           r = await fetch('https://aiplatform.googleapis.com/v1/publishers/google/models/' + model + ':generateContent', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
             body: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 1 } })
           });
         } else {
@@ -1259,7 +1259,7 @@ VRATI ISKLJUČIVO JSON FORMAT:
       try {
         r = await fetch(`https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ role: 'user', parts }],
             generationConfig: { maxOutputTokens: 16384, temperature: 0, responseMimeType: 'application/json' }
