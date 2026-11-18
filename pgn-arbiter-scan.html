@@ -691,6 +691,7 @@
 
       const moves = [];
       let nText = 0;
+      const rawTexts = [];
       const total = bands.length;
 
       for (let i = 0; i < total; i++) {
@@ -699,7 +700,10 @@
         try {
           const out = await pipe(strip.toDataURL('image/png'));
           const text = (out?.[0]?.generated_text || '').trim();
-          if (text) nText++;
+          if (text) {
+            nText++;
+            if (rawTexts.length < 8) rawTexts.push(text);
+          }
           const tokens = recognizeSANTokens(text);
           if (tokens.length) moves.push({ san: tokens[0], alts: tokens.slice(1, 4) });
         } catch (e) {
@@ -712,10 +716,14 @@
         }
       }
 
+      console.log('[TrOCR] sirovi tekstovi:', rawTexts);
+
       if (!moves.length) {
+        const ex = rawTexts.slice(0, 3).map(t => '"' + t.slice(0, 40) + '"').join(', ');
         throw new Error(
-          'Lokalni model nije prepoznao nijedan potez (tekst pronađen na ' + nText + '/' + total +
-          ' redova). Uslikaj zapisnik ravno odozgo s dobrim svjetlom, ili koristi cloud AI.'
+          'Lokalni model nije prepoznao nijedan potez (tekst na ' + nText + '/' + total + ' redova). ' +
+          (ex ? 'Model je pročitao: ' + ex + '. ' : '') +
+          'Uslikaj zapisnik ravno odozgo s dobrim svjetlom, ili koristi cloud AI.'
         );
       }
       return moves;
