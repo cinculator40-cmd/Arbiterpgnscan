@@ -676,34 +676,172 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, W, H);
 
-      const ROWS = 40;
-      const stripH = Math.max(20, Math.floor(H / ROWS));
+      let bands = detectTextRows(canvas);
+      if (!bands || bands.length < 4) {
+        const ROWS = 40;
+        const stripH = Math.max(12, Math.floor(H / ROWS));
+        bands = [];
+        for (let r = 0; r < ROWS; r++) {
+          const y0 = r * stripH;
+          const y1 = y0 + stripH;
+          if (y1 > H) break;
+          bands.push([y0, y1 - 1]);
+        }
+      }
+
       const moves = [];
+      let nText = 0;
+      const total = bands.length;
 
-      for (let r = 0; r < ROWS; r++) {
-        const y = r * stripH;
-        if (y + stripH > H) break;
-        const strip = document.createElement('canvas');
-        strip.width = W; strip.height = stripH;
-        strip.getContext('2d').drawImage(canvas, 0, y, W, stripH, 0, 0, W, stripH);
-        const dataUrl = strip.toDataURL('image/png');
-
+      for (let i = 0; i < total; i++) {
+        const strip = stripCanvas(canvas, bands[i][0], bands[i][1]);
+        if (!strip) continue;
         try {
-          const out = await pipe(dataUrl);
+          const out = await pipe(strip.toDataURL('image/png'));
           const text = (out?.[0]?.generated_text || '').trim();
-          const parsed = parseLocalLine(text);
-          if (parsed) moves.push({ san: parsed, alts: [] });
+          if (text) nText++;
+          const tokens = recognizeSANTokens(text);
+          if (tokens.length) moves.push({ san: tokens[0], alts: tokens.slice(1, 4) });
         } catch (e) {
           // Preskoči traku koja ne uspije
         }
 
-        if (r % 5 === 0) {
-          showStatus(`🧠 Lokalno prepoznavanje... red ${r + 1}/${ROWS}${sideLabel ? ' — ' + sideLabel : ''}`, 'local');
+        if (i % 5 === 0) {
+          showStatus(`🧠 Lokalno prepoznavanje... red ${i + 1}/${total}${sideLabel ? ' — ' + sideLabel : ''}`, 'local');
           await sleep(0);
         }
       }
 
+      if (!moves.length) {
+        throw new Error(
+          'Lokalni model nije prepoznao nijedan potez (tekst pronađen na ' + nText + '/' + total +
+          ' redova). Uslikaj zapisnik ravno odozgo s dobrim svjetlom, ili koristi cloud AI.'
+        );
+      }
       return moves;
+    }
+
+    /**
+     * Otkriva retke teksta na slici preko gustoće tamnih piksela po retku (horizontalna projekcija).
+     * Vraća niz [y0, y1] pojasova ili null ako detekcija nije pouzdana.
+     */
+    function detectTextRows(canvas) {
+      const W = canvas.width, H = canvas.height;
+      if (W < 40 || H < 60) return null;
+      let data;
+      try { data = canvas.getContext('2d').getImageData(0, 0, W, H).data; } catch (e) { return null; }
+      const dark = new Float32Array(H);
+      for (let y = 0; y < H; y++) {
+        let sum = 0;
+        const base = y * W * 4;
+        for (let x = 0; x < W; x++) {
+          const p = base + x * 4;
+          const g = data[p] * 0.299 + data[p + 1] * 0.587 + data[p + 2] * 0.114;
+          sum += 1 - g / 255;
+        }
+        dark[y] = sum / W;
+      }
+      const sample = Array.from(dark).sort((a, b) => a - b);
+      const lo = sample[Math.floor(sample.length / 4)];
+      const hi = sample[sample.length - 1 - Math.floor(sample.length / 50)];
+      if (hi < lo + 0.015) return null;
+      const thr = lo + (hi - lo) * 0.22;
+      const gapAllow = Math.max(3, Math.round(H / 150));
+      const bands = [];
+      let y = 0;
+      while (y < H) {
+        while (y < H && dark[y] <= thr) y++;
+        if (y >= H) break;
+        let end = y, blank = 0, z = y;
+        while (z < H) {
+          if (dark[z] > thr) { end = z; blank = 0; }
+          else { blank++; if (blank > gapAllow) break; }
+          z++;
+        }
+        if (end - y + 1 >= Math.max(6, Math.round(H / 200))) bands.push([y, end]);
+        y = end + 1;
+      }
+      return bands.length ? bands.slice(0, 60) : null;
+    }
+
+    /**
+     * Izdvaja jedan redak iz slike, povećava ga (TrOCR radi bolje na većem tekstu)
+     * i prebacuje u sivu s kontrastnim rastezanjem.
+     */
+    function stripCanvas(src, y0, y1) {
+      const pad = 4;
+      const ys = Math.max(0, y0 - pad);
+      const ye = Math.min(src.height - 1, y1 + pad);
+      const h = ye - ys + 1;
+      if (h < 5) return null;
+      const scale = Math.max(1, 48 / h);
+      const c = document.createElement('canvas');
+      c.width = src.width;
+      c.height = Math.round(h * scale);
+      const x = c.getContext('2d');
+      x.imageSmoothingEnabled = true;
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(src, 0, ys, src.width, h, 0, 0, c.width, c.height);
+      try {
+        const d = x.getImageData(0, 0, c.width, c.height);
+        const px = d.data;
+        let min = 255, max = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          const g = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+          px[i] = g; px[i + 1] = g; px[i + 2] = g;
+          if (g < min) min = g;
+          if (g > max) max = g;
+        }
+        const range = Math.max(1, max - min);
+        for (let i = 0; i < px.length; i += 4) {
+          const v = Math.round(((px[i] - min) / range) * 255);
+          px[i] = v; px[i + 1] = v; px[i + 2] = v;
+        }
+        x.putImageData(d, 0, 0);
+      } catch (e) { /* slika u boji je i dalje upotrebljiva */ }
+      return c;
+    }
+
+    const CRO_TO_SAN = { S: 'N', L: 'B', T: 'R', D: 'Q' };
+
+    function sanShape(t) {
+      return /^[KQRBNO]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$/.test(t) ||
+             /^O-O(-O)?[+#]?$/.test(t);
+    }
+
+    /**
+     * Iz TrOCR teksta izvlači tokene koji najsličnije SAN potezu — popustljivo:
+     * prihvaća hrvatske oznake (S/L/T/D→N/B/R/Q), mala početna slova, i potez
+     * utisnut unutar šumovog tokena. Vraća niz kandidata (najjači prvi) ili [].
+     */
+    function recognizeSANTokens(text) {
+      if (!text) return [];
+      let s = text.replace(/\d+\s*[.)]\s*/g, ' ');
+      s = s.replace(/[^a-zA-Z0-9=\-+#O]/g, ' ').trim();
+      if (!s) return [];
+      const out = [];
+      const seen = new Set();
+      const push = t => { if (t && !seen.has(t)) { seen.add(t); out.push(t); } };
+      for (const t of s.split(/\s+/).filter(Boolean)) {
+        if (/^[0Oo]-[0Oo](-[0Oo])?[+#]?$/.test(t)) { push(t.replace(/[0o]/g, 'O')); continue; }
+        if (sanShape(t)) { push(t); continue; }
+        const cap = t.charAt(0).toUpperCase() + t.slice(1);
+        if (sanShape(cap)) { push(cap); continue; }
+        if (CRO_TO_SAN[t.charAt(0)] && sanShape(CRO_TO_SAN[t.charAt(0)] + t.slice(1))) {
+          push(CRO_TO_SAN[t.charAt(0)] + t.slice(1));
+          continue;
+        }
+        const PIECE_UP = { K: 'K', D: 'Q', T: 'R', L: 'B', S: 'N', Q: 'Q', R: 'R', B: 'B', N: 'N' };
+        for (let i = 0; i < t.length - 1; i++) {
+          const m = t.slice(i).match(/[a-zA-Z]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?/);
+          if (!m) break;
+          const c0 = m[0].charAt(0);
+          const rest = m[0].slice(1);
+          const cand = PIECE_UP[c0] ? PIECE_UP[c0] + rest : m[0];
+          if (sanShape(cand)) { push(cand); break; }
+        }
+      }
+      return out;
     }
 
     /**
@@ -745,23 +883,11 @@
     }
 
     /**
-     * Očisti tekst koji je TrOCR vratio u jednom redu i pokušaj izvući SAN potez.
-     * Vraća SAMO token koji stvarno liči na potez — brojevi poteza i smeće se preskaču.
+     * Iz TrOCR teksta u jednom redu vrati najbolji SAN kandidat (ili null).
      */
     function parseLocalLine(text) {
-      if (!text) return null;
-      let s = text.replace(/^\s*\d+\s*[.)]?\s*/, ' ').trim();
-      s = s.replace(/[^a-zA-Z0-9=+#\-]/g, ' ').trim();
-      if (!s) return null;
-      const tokens = s.split(/\s+/).filter(Boolean);
-      for (const t of tokens) {
-        if (/^[KQRBNO]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$/.test(t) ||
-            /^O-O(-O)?[+#]?$/.test(t) ||
-            /^[0Oo]-[0Oo](-[0Oo])?[+#]?$/.test(t)) {
-          return t;
-        }
-      }
-      return null;
+      const t = recognizeSANTokens(text);
+      return t.length ? t[0] : null;
     }
 
     // ============================================================
