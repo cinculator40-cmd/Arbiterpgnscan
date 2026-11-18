@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PGN Arbiter Scan — Hybrid v2</title>
+  <style>
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface-2: #334155;
+      --text: #f1f5f9; --text-muted: #94a3b8;
+      --accent: #3b82f6; --accent-hover: #2563eb;
+      --danger: #ef4444; --success: #22c55e; --warning: #f59e0b;
+      --local: #a855f7; --local-hover: #9333ea;
+      --radius: 12px; --shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; padding: 16px 16px 80px; line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    h1 span { color: var(--accent); }
+    .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 20px; }
+
+    .card {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 1rem; font-weight: 600; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; }
+    input, select, button, textarea {
+      font-family: inherit; font-size: 1rem; border-radius: 8px;
+      border: 1px solid var(--surface-2); background: var(--bg);
+      color: var(--text); padding: 10px 12px; width: 100%; outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    button { cursor: pointer; border: none; font-weight: 600; transition: background 0.2s, transform 0.1s; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface-2); color: var(--text); }
+    .btn-secondary:hover:not(:disabled) { background: #475569; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-chessbase { background: #8b5cf6; color: #fff; }
+    .btn-local { background: var(--local); color: #fff; }
+    .btn-local:hover:not(:disabled) { background: var(--local-hover); }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .btn-group button { flex: 1; min-width: 120px; }
+
+    .upload-section { margin-bottom: 4px; }
+    .upload-label { font-weight: 600; color: var(--text); margin-bottom: 8px; font-size: 0.95rem; }
+    .upload-area {
+      border: 2px dashed var(--surface-2); border-radius: var(--radius);
+      padding: 20px 16px; text-align: center; cursor: pointer;
+      transition: border-color 0.2s; margin-bottom: 8px;
+    }
+    .upload-area:hover { border-color: var(--accent); }
+    .upload-area .icon { font-size: 1.8rem; margin-bottom: 6px; }
+    .upload-area input[type="file"] { display: none; }
+
+    .image-preview-container {
+      position: relative; overflow: hidden; border-radius: var(--radius);
+      background: #000; display: none; max-height: 280px; margin-bottom: 8px;
+    }
+    .image-preview-container.visible { display: block; }
+    .image-preview-container img {
+      width: 100%; display: block; transition: transform 0.2s;
+      transform-origin: center center;
+    }
+    .zoom-controls { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 4px; }
+    .zoom-controls button {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(0,0,0,0.7); color: #fff; font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .remove-btn {
+      position: absolute; top: 8px; right: 8px;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(239,68,68,0.9); color: #fff;
+      font-size: 1.2rem; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .api-row { display: flex; gap: 8px; flex-direction: column; }
+    @media (min-width: 480px) { .api-row { flex-direction: row; } }
+
+    .mode-toggle {
+      display: flex; align-items: center; gap: 8px; margin-top: 12px;
+      padding: 10px 12px; background: var(--bg); border-radius: 8px;
+      border: 1px solid var(--surface-2);
+    }
+    .mode-toggle input { width: auto; }
+    .mode-toggle label { margin: 0; font-size: 0.9rem; color: var(--text); }
+
+    .status {
+      padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;
+      margin-top: 10px; display: none;
+    }
+    .status.visible { display: block; }
+    .status.info { background: #1e3a5f; color: #93c5fd; }
+    .status.error { background: #451a1a; color: #fca5a5; }
+    .status.success { background: #14361f; color: #86efac; }
+    .status.warning { background: #451a1a; color: #fbbf24; }
+    .status.local { background: #2e1065; color: #d8b4fe; }
+
+    .move-list {
+      max-height: 200px; overflow-y: auto;
+      font-family: 'Courier New', monospace; font-size: 0.9rem;
+      background: var(--bg); border-radius: 8px;
+      padding: 8px 12px; margin-top: 8px; line-height: 1.8;
+    }
+    .move-list .correct { color: var(--success); }
+    .move-list .auto-corrected { color: var(--warning); }
+    .move-list .illegal { color: var(--danger); font-weight: bold; }
+
+    .legal-moves-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+      gap: 6px; margin-top: 10px;
+    }
+    .legal-moves-grid button {
+      background: var(--surface-2); color: var(--text);
+      padding: 8px 4px; font-size: 0.9rem; font-weight: 500; text-align: center;
+    }
+    .legal-moves-grid button:hover { background: var(--accent); color: #fff; }
+    .legal-moves-grid button.suggested {
+      background: var(--warning); color: #000; border: 2px solid #fbbf24;
+    }
+    .legal-moves-grid button.suggested:hover { background: #d97706; color: #fff; }
+
+    .unicode-board {
+      font-family: 'Courier New', monospace; font-size: 1.1rem;
+      line-height: 1.2; background: var(--bg); padding: 10px;
+      border-radius: 8px; display: inline-block; margin-top: 8px;
+      white-space: pre; letter-spacing: 1px;
+    }
+
+    .collapsible-header {
+      cursor: pointer; display: flex; justify-content: space-between;
+      align-items: center; user-select: none;
+    }
+    .collapsible-content { display: none; margin-top: 12px; }
+    .collapsible-content.open { display: block; }
+    .collapsible-header .arrow { transition: transform 0.2s; }
+    .collapsible-header.open .arrow { transform: rotate(180deg); }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (max-width: 400px) { .form-grid { grid-template-columns: 1fr; } }
+
+    #pgnOutput {
+      font-family: 'Courier New', monospace; font-size: 0.8rem;
+      background: var(--bg); border-radius: 8px; padding: 10px;
+      min-height: 120px; white-space: pre-wrap; word-break: break-all;
+      margin-top: 8px; display: none;
+    }
+    #pgnOutput.visible { display: block; }
+
+    .help-block {
+      margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--surface-2);
+    }
+    .help-block summary {
+      cursor: pointer; color: var(--text-muted); font-size: 0.85rem;
+      font-weight: 600; user-select: none; padding: 4px 0; list-style: none;
+    }
+    .help-block summary::-webkit-details-marker { display: none; }
+    .help-block summary::before { content: '▸ '; }
+    .help-block[open] summary::before { content: '▾ '; }
+    .help-block .help-content {
+      margin-top: 10px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.7;
+    }
+    .help-block strong { color: var(--text); }
+    .help-block ol { margin: 6px 0 12px 20px; }
+    .help-block code, .help-block kbd {
+      background: var(--bg); padding: 1px 5px; border-radius: 4px;
+      font-family: 'Courier New', monospace; font-size: 0.85em; color: var(--accent);
+    }
+    .help-block kbd { color: var(--text); border: 1px solid var(--surface-2); }
+
+    .model-progress {
+      margin-top: 10px; display: none;
+    }
+    .model-progress.visible { display: block; }
+    .model-progress .bar {
+      height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden;
+    }
+    .model-progress .bar-fill {
+      height: 100%; background: var(--local); width: 0%;
+      transition: width 0.3s;
+    }
+    .model-progress .bar-label {
+      font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;
+    }
+
+    @media (min-width: 600px) { body { max-width: 600px; margin: 0 auto; padding: 24px; } }
+    .hidden { display: none !important; }
+    .mt-8 { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .text-muted { color: var(--text-muted); font-size: 0.8rem; }
+
+    #errBanner {
+      position: fixed; left: 0; right: 0; top: 0; z-index: 9999;
+      background: #7f1d1d; color: #fff; padding: 10px 14px;
+      font: 14px/1.4 sans-serif; white-space: pre-wrap; word-break: break-word;
+    }
+  </style>
+  <script>
+    (function () {
+      function show(msg) {
+        var d = document.getElementById('errBanner');
+        if (!d) { d = document.createElement('div'); d.id = 'errBanner'; document.body.appendChild(d); }
+        d.textContent += msg + '\n';
+      }
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'SCRIPT') show('Ne mogu učitati skriptu: ' + (t.src || 'inline'));
+        else show('Greška: ' + e.message + (e.lineno ? ' (red ' + e.lineno + ')' : ''));
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        show('Greška: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+      });
+      setTimeout(function () {
+        if (!window.__appStarted) show('Aplikacija se nije pokrenula. Provjeri internet vezu ili podršku preglednika.');
+      }, 15000);
+    })();
+  </script>
+</head>
+<body>
+
+  <h1>PGN <span>Arbiter</span> Scan <small style="font-size:0.6em;color:var(--local)">Hybrid v2</small></h1>
+  <p class="subtitle">Cloud AI + lokalni OCR &rarr; automatsko prebacivanje &rarr; PGN za ChessBase i Lichess</p>
+
+  <!-- ========== 1. UPLOAD SLIKA ========== -->
+  <div class="card">
+    <div class="card-title">📸 Zapisnici (jedan ili oba)</div>
+    <p class="text-muted" style="margin-bottom:12px">Učitaj oba zapisnika za najbolju točnost — AI ih međusobno provjerava i rješava nečitke poteze.</p>
+
+    <div class="upload-section">
+      <div class="upload-label">♙ Zapisnik bijelog igrača</div>
+      <div class="upload-area" id="uploadAreaWhite">
+        <div class="icon">📷</div>
+        <div><strong>Uslikaj ili odaberi</strong></div>
+        <div class="text-muted">Kamera ili galerija</div>
+        <input type="file" id="fileInputWhite" accept="image/*">
+      </div>
+      <div class="image-preview-container" id="previewContainerWhite">
+        <img id="previewImageWhite" alt="Zapisnik bijelog">
+        <button class="remove-btn" id="removeWhite" title="Ukloni">×</button>
+        <div class="zoom-controls">
+          <button data-zoom="white" data-dir="in" title="Povećaj">+</button>
+          <button data-zoom="white" data-dir="out" title="Smanji">−</button>
+          <button data-zoom="white" data-dir="reset" title="Reset">↺</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="upload-section mt-12">
+      <div class="upload-label">♟ Zapisnik crnog igrača</div>
+      <div class="upload-area" id="uploadAreaBlack">
+        <div class="icon">📷</div>
+        <div><strong>Uslikaj ili odaberi</strong></div>
+        <div class="text-muted">Kamera ili galerija</div>
+        <input type="file" id="fileInputBlack" accept="image/*">
+      </div>
+      <div class="image-preview-container" id="previewContainerBlack">
+        <img id="previewImageBlack" alt="Zapisnik crnog">
+        <button class="remove-btn" id="removeBlack" title="Ukloni">×</button>
+        <div class="zoom-controls">
+          <button data-zoom="black" data-dir="in" title="Povećaj">+</button>
+          <button data-zoom="black" data-dir="out" title="Smanji">−</button>
+          <button data-zoom="black" data-dir="reset" title="Reset">↺</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 2. AI / LOKALNI MODEL ========== -->
+  <div class="card">
+    <div class="card-title">🤖 Prepoznavanje</div>
+
+    <div class="mode-toggle">
+      <input type="checkbox" id="localOnlyToggle">
+      <label for="localOnlyToggle">
+        <strong>Offline način (samo lokalno)</strong><br>
+        <span class="text-muted">Ne kontaktira nijedan server. TrOCR model radi u pregledniku.</span>
+      </label>
+    </div>
+
+    <div id="cloudConfig">
+      <div class="api-row mt-12">
+        <div style="flex:2">
+          <label for="apiKey">API ključ (cloud)</label>
+          <div style="display:flex;gap:8px">
+            <input type="password" id="apiKey" placeholder="sk-... / AIza... / AQ..." autocomplete="off" style="flex:1">
+            <button type="button" class="btn-secondary" id="toggleKey" style="width:auto" title="Prikaži/sakrij">👁</button>
+          </div>
+        </div>
+        <div style="flex:1">
+          <label for="modelSelect">Model</label>
+          <select id="modelSelect">
+            <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash</option>
+            <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+            <option value="gpt-4o">OpenAI GPT-4o</option>
+            <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-muted mt-8">
+        <strong>OpenAI</strong> ključevi: <code>sk-</code> · <strong>Google AI Studio</strong>: <code>AIza</code> ·
+        <strong>Google Vertex (express)</strong>: <code>AQ.</code>
+        &mdash; aplikacija automatski prepoznaje format i endpoint.
+      </p>
+      <button class="btn-secondary mt-12" id="testKeyBtn">🔑 Testiraj ključ</button>
+    </div>
+
+    <div class="model-progress" id="modelProgress">
+      <div class="bar"><div class="bar-fill" id="modelBarFill"></div></div>
+      <div class="bar-label" id="modelBarLabel">Pripremam lokalni model...</div>
+    </div>
+
+    <button class="btn-primary mt-12" id="recognizeBtn" disabled>🔍 Prepoznaj poteze</button>
+    <button class="btn-local mt-8" id="localBtn" disabled>🧠 Prepoznaj lokalno (TrOCR)</button>
+    <div class="status" id="statusMsg"></div>
+  </div>
+
+  <!-- ========== 3. VALIDATOR ========== -->
+  <div class="card hidden" id="validatorCard">
+    <div class="card-title">♟️ Validator poteza</div>
+    <div id="moveListContainer" class="move-list"></div>
+    <div id="interventionArea" class="hidden">
+      <p style="color: var(--danger); font-weight: 600; margin-top: 12px;">
+        ⚠️ Nije moguće automatski ispraviti potez: <span id="illegalMoveDisplay"></span>
+      </p>
+      <p class="text-muted">Trenutna pozicija:</p>
+      <div id="miniBoard" class="unicode-board"></div>
+      <p class="text-muted mt-8" id="interventionHint">Odaberite legalni potez:</p>
+      <div id="legalMovesGrid" class="legal-moves-grid"></div>
+    </div>
+    <div id="validationComplete" class="hidden"></div>
+  </div>
+
+  <!-- ========== 4. PGN ZAGLAVLJE ========== -->
+  <div class="card hidden" id="pgnHeaderCard">
+    <div class="collapsible-header" id="headerToggle">
+      <span class="card-title" style="margin:0;">📋 Podaci za PGN zaglavlje (Opcionalno)</span>
+      <span class="arrow">▼</span>
+    </div>
+    <div class="collapsible-content" id="headerContent">
+      <div class="form-grid">
+        <div><label>Event</label><input id="hEvent" class="header-field" placeholder="Turnir"></div>
+        <div><label>Site</label><input id="hSite" class="header-field" placeholder="Mjesto"></div>
+        <div><label>Date</label><input id="hDate" type="date" class="header-field"></div>
+        <div><label>Round</label><input id="hRound" class="header-field" placeholder="Kolo"></div>
+        <div><label>White</label><input id="hWhite" class="header-field" placeholder="Igrač bijeli"></div>
+        <div><label>WhiteElo</label><input id="hWhiteElo" class="header-field" placeholder="Elo"></div>
+        <div><label>Black</label><input id="hBlack" class="header-field" placeholder="Igrač crni"></div>
+        <div><label>BlackElo</label><input id="hBlackElo" class="header-field" placeholder="Elo"></div>
+        <div style="grid-column: 1 / -1;">
+          <label>Result</label>
+          <select id="hResult" class="header-field">
+            <option value="*">* (nepoznato)</option>
+            <option value="1-0">1-0 (bijeli)</option>
+            <option value="0-1">0-1 (crni)</option>
+            <option value="1/2-1/2">1/2-1/2 (remi)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 5. PGN IZLAZ ========== -->
+  <div class="card hidden" id="exportCard">
+    <div class="card-title">📤 Izvoz</div>
+    <pre id="pgnOutput"></pre>
+    <div class="btn-group">
+      <button class="btn-primary" id="downloadBtn">⬇️ Preuzmi .pgn</button>
+      <button class="btn-chessbase" id="chessbaseBtn">♟ Preuzmi za ChessBase</button>
+      <button class="btn-secondary" id="copyBtn">📋 Kopiraj PGN</button>
+      <button class="btn-success" id="shareBtn">📤 Podijeli</button>
+    </div>
+
+    <details class="help-block">
+      <summary>Kako uvesti u ChessBase / Lichess / Chess.com?</summary>
+      <div class="help-content">
+        <strong>♟ ChessBase (Windows):</strong>
+        <ol>
+          <li>Klikni <code>♟ Preuzmi za ChessBase</code> ili <code>⬇️ Preuzmi .pgn</code></li>
+          <li>Dvoklik na preuzetu <code>.pgn</code> datoteku — ChessBase je automatski otvara</li>
+          <li>Ako ne: ChessBase → <em>Datoteka → Otvori</em> → odaberi datoteku</li>
+          <li>Alternativa: <code>📋 Kopiraj PGN</code> → u ChessBase klikni u listu partija i pritisni <kbd>Ctrl</kbd>+<kbd>V</kbd></li>
+        </ol>
+        <strong>🔵 Lichess:</strong>
+        <ol><li>Otvori <code>lichess.org/import</code></li><li>Zalijepi PGN ili prenesi <code>.pgn</code> datoteku</li></ol>
+        <strong>🟢 Chess.com:</strong>
+        <ol><li>Profil → <em>Import</em> → zalijepi PGN</li></ol>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============================================================
+       SKRIPTE
+       ============================================================ -->
+  <script type="module">
+    // ---------- Učitavanje biblioteka ----------
+    import { Chess } from 'https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm';
+
+    // Transformers.js — učitava se dinamički da ne blokira početni render
+    let transformersPipeline = null;
+    let localOcrPromise = null;
+    const LOCAL_MODEL_ID = 'Xenova/trocr-small-handwritten';
+
+    // ============================================================
+    // KONSTANTE
+    // ============================================================
+    const MAX_IMAGE_DIM = 2000;
+    const JPEG_QUALITY  = 0.85;
+    const MAX_ATTEMPTS_PER_MODEL = 3;
+
+    const MODEL_CHAINS = {
+      'gemini-3.8-flash': ['gemini-3.8-flash', 'gemini-3.7-flash'],
+      'gemini-3.7-flash': ['gemini-3.7-flash', 'gemini-3.8-flash'],
+      'gpt-4o':           ['gpt-4o', 'gpt-4o-mini'],
+      'gpt-4o-mini':      ['gpt-4o-mini', 'gpt-4o'],
+    };
+
+    // ============================================================
+    // STANJE
+    // ============================================================
+    let chess = new Chess();
+    let rawMoves = [];
+    let validatedMoves = [];
+    let repairNotes = [];
+    let currentIndex = 0;
+
+    let currentImageFileWhite = null;
+    let currentImageFileBlack = null;
+    const zoomState = { white: 1, black: 1 };
+    const previewUrls = { white: null, black: null };
+    let apiKey = '';
+    let localOnly = false;
+
+    const apiKeyInput        = document.getElementById('apiKey');
+    const modelSelect        = document.getElementById('modelSelect');
+    const recognizeBtn       = document.getElementById('recognizeBtn');
+    const localBtn           = document.getElementById('localBtn');
+    const localOnlyToggle    = document.getElementById('localOnlyToggle');
+    const cloudConfig        = document.getElementById('cloudConfig');
+    const statusMsg          = document.getElementById('statusMsg');
+    const validatorCard      = document.getElementById('validatorCard');
+    const moveListContainer  = document.getElementById('moveListContainer');
+    const interventionArea   = document.getElementById('interventionArea');
+    const illegalMoveDisplay = document.getElementById('illegalMoveDisplay');
+    const interventionHint   = document.getElementById('interventionHint');
+    const miniBoard          = document.getElementById('miniBoard');
+    const legalMovesGrid     = document.getElementById('legalMovesGrid');
+    const validationComplete = document.getElementById('validationComplete');
+    const pgnHeaderCard      = document.getElementById('pgnHeaderCard');
+    const exportCard         = document.getElementById('exportCard');
+    const pgnOutput          = document.getElementById('pgnOutput');
+    const modelProgress      = document.getElementById('modelProgress');
+    const modelBarFill       = document.getElementById('modelBarFill');
+    const modelBarLabel      = document.getElementById('modelBarLabel');
+
+    // ============================================================
+    // POMOĆNE
+    // ============================================================
+    function showStatus(msg, type = 'info') {
+      statusMsg.textContent = msg;
+      statusMsg.className = 'status visible ' + type;
+    }
+    function hideStatus() { statusMsg.className = 'status'; }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function modelLabel(model) {
+      if (model.startsWith('gemini')) {
+        return 'Gemini ' + model.replace('gemini-', '').replace(/-/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+      }
+      if (model.startsWith('gpt')) return 'GPT ' + model.replace('gpt-', '');
+      return model;
+    }
+
+    function detectKeyProvider(key) {
+      if (!key) return null;
+      const k = String(key).trim();
+      if (k.startsWith('sk-')) return 'openai';
+      if (k.startsWith('AQ.')) return 'vertex';
+      if (k.startsWith('AIza')) return 'gemini';
+      return null;
+    }
+
+    function mismatchModelFor(key, currentModel) {
+      const provider = detectKeyProvider(key);
+      if (!provider) return null;
+      if (provider === 'openai' && currentModel.startsWith('gemini')) return 'gpt-4o';
+      if (provider !== 'openai' && currentModel.startsWith('gpt'))    return 'gemini-3.8-flash';
+      return null;
+    }
+
+    function isRetryable(status, errData) {
+      if ([429, 500, 502, 503, 504].includes(status)) return true;
+      const statusStr = String(errData?.error?.status || '').toUpperCase();
+      if (['UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'INTERNAL', 'DEADLINE_EXCEEDED'].includes(statusStr)) return true;
+      const msg = String(errData?.error?.message || errData?.message || '').toLowerCase();
+      return msg.includes('high demand') || msg.includes('overloaded') ||
+             msg.includes('try again') || msg.includes('temporarily') ||
+             msg.includes('rate limit') || msg.includes('service unavailable');
+    }
+
+    async function resizeImage(file, maxDim = MAX_IMAGE_DIM, quality = JPEG_QUALITY) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          let { width, height } = img;
+          let newW = width, newH = height;
+          if (width > maxDim || height > maxDim) {
+            const ratio = Math.min(maxDim / width, maxDim / height);
+            newW = Math.round(width * ratio);
+            newH = Math.round(height * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = newW; canvas.height = newH;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, newW, newH);
+          canvas.toBlob(blob => {
+            if (!blob) { reject(new Error('Konverzija slike nije uspjela.')); return; }
+            const reader = new FileReader();
+            reader.onload = () => resolve({
+              base64: reader.result.split(',')[1],
+              mime: blob.type || 'image/jpeg',
+              width: newW, height: newH,
+              originalBytes: file.size, resizedBytes: blob.size
+            });
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Ne mogu učitati sliku. Ako je u HEIC/HEIF formatu (iPhone), konvertiraj je u JPG pa pokušaj ponovno.'));
+        };
+        img.src = url;
+      });
+    }
+
+    function levenshtein(a, b) {
+      const m = [];
+      for (let i = 0; i <= b.length; i++) m[i] = [i];
+      for (let j = 0; j <= a.length; j++) m[0][j] = j;
+      for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+          m[i][j] = b.charAt(i-1) === a.charAt(j-1)
+            ? m[i-1][j-1]
+            : Math.min(m[i-1][j-1]+1, m[i][j-1]+1, m[i-1][j]+1);
+        }
+      }
+      return m[b.length][a.length];
+    }
+
+    function fenToUnicodeBoard(fen) {
+      const pieceMap = {
+        'p':'♟','n':'♞','b':'♝','r':'♜','q':'♛','k':'♚',
+        'P':'♙','N':'♘','B':'♗','R':'♖','Q':'♕','K':'♔'
+      };
+      const rows = fen.split(' ')[0].split('/');
+      let board = '';
+      for (let r = 0; r < 8; r++) {
+        let line = '';
+        for (const ch of rows[r]) {
+          line += /\d/.test(ch) ? '·'.repeat(parseInt(ch)) : (pieceMap[ch] || ch);
+        }
+        board += line + '\n';
+      }
+      return board;
+    }
+
+    function normTok(s) { return s.replace(/[x+#=!?:]/g, ''); }
+    function cleanTok(t) {
+      t = String(t).trim().replace(/^[!?]+/, '').replace(/[!?]+$/, '');
+      if (/^[0Oo](-[0Oo]){1,2}[+#]?$/.test(t)) t = t.replace(/[0o]/g, 'O');
+      return t;
+    }
+
+    function isoToPgnDate(iso) {
+      if (!iso) return '????.??.??';
+      const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[1]}.${m[2]}.${m[3]}` : '????.??.??';
+    }
+
+    function safeFileName(base) {
+      return base.replace(/[<>:"/\\|?*\x00-\x1F]+/g, '_').slice(0, 80);
+    }
+
+    function fmtMB(bytes) { return (bytes / (1024*1024)).toFixed(2) + ' MB'; }
+
+    // ============================================================
+    // LOKALNI OCR (TrOCR putem Transformers.js)
+    // ============================================================
+
+    // Jedan zajednički promise: svi čekatelji dobiju isti rezultat,
+    // a greška resetira promise da se učitavanje može ponovno pokušati.
+    function ensureLocalOcr() {
+      if (transformersPipeline) return Promise.resolve(transformersPipeline);
+      if (!localOcrPromise) {
+        localOcrPromise = loadLocalOcr()
+          .then(pipe => { transformersPipeline = pipe; return pipe; })
+          .catch(e => { localOcrPromise = null; throw e; });
+      }
+      return localOcrPromise;
+    }
+
+    async function loadLocalOcr() {
+      modelProgress.classList.add('visible');
+      modelBarFill.style.width = '0%';
+      modelBarLabel.textContent = 'Preuzimam TrOCR model (~120 MB, samo prvi put)...';
+
+      try {
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0');
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
+        const pipe = await pipeline('image-to-text', LOCAL_MODEL_ID, {
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.progress != null) {
+              const pct = Math.round(p.progress);
+              modelBarFill.style.width = pct + '%';
+              modelBarLabel.textContent = `Preuzimam TrOCR model... ${pct}%`;
+            } else if (p.status === 'done') {
+              modelBarFill.style.width = '100%';
+              modelBarLabel.textContent = 'Model preuzet, učitavam...';
+            }
+          }
+        });
+
+        modelBarFill.style.width = '100%';
+        modelBarLabel.textContent = '✅ Lokalni model spreman (keširan za sljedeći put).';
+        setTimeout(() => modelProgress.classList.remove('visible'), 1500);
+        return pipe;
+      } catch (e) {
+        modelProgress.classList.remove('visible');
+        throw new Error('Lokalni model nije dostupan: ' + e.message);
+      }
+    }
+
+    /**
+     * Lokalno prepoznavanje rukopisa.
+     * TrOCR čita JEDAN RED teksta po pozivu — zato sliku režemo na horizontalne trake
+     * (jedan red = jedan potez). Za svaku traku dobijemo tekst, pa ga očistimo i
+     * pokušamo protumačiti kao potez.
+     */
+    async function localRecognize(file, sideLabel) {
+      const pipe = await ensureLocalOcr();
+      showStatus(`🧠 Lokalno prepoznavanje u tijeku${sideLabel ? ' — ' + sideLabel : ''}...`, 'local');
+
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        const url = URL.createObjectURL(file);
+        i.onload = () => { URL.revokeObjectURL(url); resolve(i); };
+        i.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Ne mogu učitati sliku za lokalni OCR.')); };
+        i.src = url;
+      });
+
+      const targetW = Math.min(1200, img.width);
+      const scale = targetW / img.width;
+      const W = Math.round(img.width * scale);
+      const H = Math.round(img.height * scale);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, W, H);
+
+      const ROWS = 40;
+      const stripH = Math.max(20, Math.floor(H / ROWS));
+      const moves = [];
+
+      for (let r = 0; r < ROWS; r++) {
+        const y = r * stripH;
+        if (y + stripH > H) break;
+        const strip = document.createElement('canvas');
+        strip.width = W; strip.height = stripH;
+        strip.getContext('2d').drawImage(canvas, 0, y, W, stripH, 0, 0, W, stripH);
+        const dataUrl = strip.toDataURL('image/png');
+
+        try {
+          const out = await pipe(dataUrl);
+          const text = (out?.[0]?.generated_text || '').trim();
+          const parsed = parseLocalLine(text);
+          if (parsed) moves.push({ san: parsed, alts: [] });
+        } catch (e) {
+          // Preskoči traku koja ne uspije
+        }
+
+        if (r % 5 === 0) {
+          showStatus(`🧠 Lokalno prepoznavanje... red ${r + 1}/${ROWS}${sideLabel ? ' — ' + sideLabel : ''}`, 'local');
+          await sleep(0);
+        }
+      }
+
+      return moves;
+    }
+
+    /**
+     * Lokalno prepoznavanje svih učitanih zapisnika.
+     * Ako su učitana oba, spoji ih po indeksu retka: preferira se zapisnik bijelog,
+     * a različito čitanje crnog ide u "alts" (kao kod cloud provjere).
+     */
+    async function localRecognizeAll() {
+      const jobs = [];
+      if (currentImageFileWhite) jobs.push(['bijeli', currentImageFileWhite]);
+      if (currentImageFileBlack) jobs.push(['crni', currentImageFileBlack]);
+
+      if (!jobs.length) throw new Error('Nema učitanih zapisnika.');
+      if (jobs.length === 1) {
+        return localRecognize(jobs[0][1], jobs[0][0]);
+      }
+
+      const whiteMoves = await localRecognize(jobs[0][1], jobs[0][0]);
+      const blackMoves = await localRecognize(jobs[1][1], jobs[1][0]);
+      return mergeLocalReadings(whiteMoves, blackMoves);
+    }
+
+    function mergeLocalReadings(a, b) {
+      const n = Math.max(a.length, b.length);
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const x = a[i], y = b[i];
+        if (x && y) {
+          if (cleanTok(x.san).toLowerCase() === cleanTok(y.san).toLowerCase()) {
+            out.push({ san: x.san, alts: [...(x.alts || [])] });
+          } else {
+            out.push({ san: x.san, alts: [...(x.alts || []), y.san] });
+          }
+        } else {
+          out.push(x || y);
+        }
+      }
+      return out.filter(Boolean);
+    }
+
+    /**
+     * Očisti tekst koji je TrOCR vratio u jednom redu i pokušaj izvući SAN potez.
+     * Vraća SAMO token koji stvarno liči na potez — brojevi poteza i smeće se preskaču.
+     */
+    function parseLocalLine(text) {
+      if (!text) return null;
+      let s = text.replace(/^\s*\d+\s*[.)]?\s*/, ' ').trim();
+      s = s.replace(/[^a-zA-Z0-9=+#\-]/g, ' ').trim();
+      if (!s) return null;
+      const tokens = s.split(/\s+/).filter(Boolean);
+      for (const t of tokens) {
+        if (/^[KQRBNO]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?$/.test(t) ||
+            /^O-O(-O)?[+#]?$/.test(t) ||
+            /^[0Oo]-[0Oo](-[0Oo])?[+#]?$/.test(t)) {
+          return t;
+        }
+      }
+      return null;
+    }
+
+    // ============================================================
+    // INICIJALIZACIJA
+    // ============================================================
+    function init() {
+      window.__appStarted = true;
+
+      let savedKey = null;
+      try { savedKey = localStorage.getItem('pgn_arbiter_api_key'); } catch(e) {}
+      if (savedKey) { apiKeyInput.value = savedKey; apiKey = savedKey; }
+
+      try {
+        const savedLocal = localStorage.getItem('pgn_arbiter_local_only');
+        if (savedLocal === '1') {
+          localOnlyToggle.checked = true;
+          localOnly = true;
+        }
+      } catch(e) {}
+
+      document.getElementById('hDate').value = new Date().toISOString().slice(0, 10);
+
+      document.getElementById('uploadAreaWhite').addEventListener('click', () => document.getElementById('fileInputWhite').click());
+      document.getElementById('uploadAreaBlack').addEventListener('click', () => document.getElementById('fileInputBlack').click());
+      document.getElementById('fileInputWhite').addEventListener('change', e => handleFileSelect('white', e.target.files[0]));
+      document.getElementById('fileInputBlack').addEventListener('change', e => handleFileSelect('black', e.target.files[0]));
+      document.getElementById('removeWhite').addEventListener('click', e => { e.stopPropagation(); clearImage('white'); });
+      document.getElementById('removeBlack').addEventListener('click', e => { e.stopPropagation(); clearImage('black'); });
+
+      document.querySelectorAll('[data-zoom]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          applyZoom(btn.dataset.zoom, btn.dataset.dir);
+        });
+      });
+
+      apiKeyInput.addEventListener('input', handleApiKeyChange);
+      document.getElementById('toggleKey').addEventListener('click', toggleKeyVisible);
+      document.getElementById('testKeyBtn').addEventListener('click', testKey);
+
+      localOnlyToggle.addEventListener('change', handleLocalOnlyToggle);
+
+      recognizeBtn.addEventListener('click', handleRecognize);
+      localBtn.addEventListener('click', handleLocalRecognize);
+      document.getElementById('headerToggle').addEventListener('click', toggleHeader);
+      document.getElementById('downloadBtn').addEventListener('click', downloadPGN);
+      document.getElementById('chessbaseBtn').addEventListener('click', exportForChessBase);
+      document.getElementById('copyBtn').addEventListener('click', copyPGN);
+      document.getElementById('shareBtn').addEventListener('click', sharePGN);
+
+      document.querySelectorAll('.header-field').forEach(el => {
+        el.addEventListener('input', generatePGN);
+      });
+
+      updateUI();
+    }
+
+    // ============================================================
+    // OFFLINE NAČIN
+    // ============================================================
+    function handleLocalOnlyToggle() {
+      localOnly = localOnlyToggle.checked;
+      try { localStorage.setItem('pgn_arbiter_local_only', localOnly ? '1' : '0'); } catch(e) {}
+      updateUI();
+      if (localOnly) {
+        showStatus('🧠 Offline način uključen — koristi se samo lokalni TrOCR model. Slike ne napuštaju uređaj.', 'local');
+      } else {
+        showStatus('☁️ Cloud način — primarni je AI model, lokalni služi kao rezerva.', 'info');
+      }
+    }
+
+    function localOcrPending() {
+      return !!localOcrPromise && !transformersPipeline;
+    }
+
+    function updateUI() {
+      const hasImg = !!(currentImageFileWhite || currentImageFileBlack);
+      const hasKey = !!apiKey;
+
+      const cloudLabel = '🔍 Prepoznaj poteze' +
+        (currentImageFileWhite && currentImageFileBlack ? ' (oba)' : '');
+      recognizeBtn.textContent = cloudLabel;
+      recognizeBtn.disabled = !(hasImg && hasKey && !localOnly);
+
+      localBtn.disabled = !hasImg || localOcrPending();
+
+      if (localOnly) cloudConfig.classList.add('hidden');
+      else cloudConfig.classList.remove('hidden');
+    }
+
+    // ============================================================
+    // UPLOAD / PREVIEW
+    // ============================================================
+    function handleFileSelect(side, file) {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { showStatus('Molimo odaberite sliku (JPG ili PNG).', 'error'); return; }
+      const imgEl = document.getElementById(side === 'white' ? 'previewImageWhite' : 'previewImageBlack');
+      const contEl = document.getElementById(side === 'white' ? 'previewContainerWhite' : 'previewContainerBlack');
+
+      if (previewUrls[side]) { try { URL.revokeObjectURL(previewUrls[side]); } catch(e) {} previewUrls[side] = null; }
+
+      previewUrls[side] = URL.createObjectURL(file);
+      imgEl.src = previewUrls[side];
+      contEl.classList.add('visible');
+
+      if (side === 'white') currentImageFileWhite = file;
+      else currentImageFileBlack = file;
+
+      zoomState[side] = 1;
+      imgEl.style.transform = 'scale(1)';
+      hideStatus();
+      updateUI();
+    }
+
+    function clearImage(side) {
+      if (previewUrls[side]) {
+        try { URL.revokeObjectURL(previewUrls[side]); } catch(e) {}
+        previewUrls[side] = null;
+      }
+      if (side === 'white') {
+        currentImageFileWhite = null;
+        document.getElementById('previewContainerWhite').classList.remove('visible');
+        document.getElementById('fileInputWhite').value = '';
+      } else {
+        currentImageFileBlack = null;
+        document.getElementById('previewContainerBlack').classList.remove('visible');
+        document.getElementById('fileInputBlack').value = '';
+      }
+      zoomState[side] = 1;
+      updateUI();
+    }
+
+    function applyZoom(side, dir) {
+      if (dir === 'reset') zoomState[side] = 1;
+      else if (dir === 'in') zoomState[side] = Math.min(3, zoomState[side] + 0.2);
+      else zoomState[side] = Math.max(0.5, zoomState[side] - 0.2);
+      document.getElementById(side === 'white' ? 'previewImageWhite' : 'previewImageBlack')
+        .style.transform = `scale(${zoomState[side]})`;
+    }
+
+    // ============================================================
+    // API KEY
+    // ============================================================
+    function handleApiKeyChange() {
+      const val = apiKeyInput.value.replace(/[\s"'“”]/g, '');
+      apiKey = val;
+      try {
+        if (val) localStorage.setItem('pgn_arbiter_api_key', val);
+        else localStorage.removeItem('pgn_arbiter_api_key');
+      } catch(e) {}
+      updateUI();
+    }
+
+    function toggleKeyVisible() {
+      const show = apiKeyInput.type === 'password';
+      apiKeyInput.type = show ? 'text' : 'password';
+      document.getElementById('toggleKey').textContent = show ? '🙈' : '👁';
+    }
+
+    async function testKey() {
+      const key = apiKeyInput.value.replace(/[\s"'“”]/g, '');
+      if (!key) { showStatus('Najprije upiši ključ.', 'error'); return; }
+
+      let model = modelSelect.value;
+      const suggested = mismatchModelFor(key, model);
+      if (suggested) {
+        model = suggested;
+        modelSelect.value = model;
+        showStatus(`🔄 Prepoznat format ključa. Automatski prebacujem na ${modelLabel(model)}.`, 'warning');
+      } else {
+        showStatus('⏳ Provjeravam ključ...', 'info');
+      }
+      await sleep(suggested ? 800 : 200);
+
+      const provider = detectKeyProvider(key);
+      try {
+        let r;
+        if (provider === 'openai') {
+          r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: 'Bearer ' + key } });
+        } else if (provider === 'vertex') {
+          r = await fetch('https://aiplatform.googleapis.com/v1/publishers/google/models/' + model + ':generateContent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 1 } })
+          });
+        } else {
+          r = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+            headers: { 'x-goog-api-key': key }
+          });
+        }
+        if (r.ok) showStatus(`✅ Ključ je ispravan za ${modelLabel(model)}.`, 'success');
+        else {
+          const e = await r.json().catch(() => ({}));
+          showStatus('❌ ' + (e.error?.message || 'Greška ' + r.status), 'error');
+        }
+      } catch (e) {
+        showStatus('❌ Nema veze: ' + e.message, 'error');
+      }
+    }
+
+    // ============================================================
+    // CLOUD PREPOZNAVANJE (s retry/fallback i auto-prijelazom na lokalno)
+    // ============================================================
+    async function handleRecognize() {
+      if ((!currentImageFileWhite && !currentImageFileBlack) || !apiKey) {
+        showStatus('Molimo učitajte barem jedan zapisnik i unesite API ključ.', 'error');
+        return;
+      }
+
+      const provider = detectKeyProvider(apiKey);
+      let chosen = modelSelect.value;
+      const suggested = mismatchModelFor(apiKey, chosen);
+
+      if (suggested) {
+        chosen = suggested;
+        modelSelect.value = chosen;
+        showStatus(`🔄 Prepoznat format ključa. Automatski prebacujem na ${modelLabel(chosen)}...`, 'warning');
+        await sleep(1200);
+      }
+
+      recognizeBtn.disabled = true;
+      showStatus('⏳ Pripremam slike...', 'info');
+
+      try {
+        const data = { base64White: null, base64Black: null, mimeWhite: null, mimeBlack: null };
+        const info = [];
+
+        if (currentImageFileWhite) {
+          const r = await resizeImage(currentImageFileWhite);
+          data.base64White = r.base64;
+          data.mimeWhite = r.mime;
+          info.push(`bijeli ${r.width}×${r.height}`);
+        }
+        if (currentImageFileBlack) {
+          const r = await resizeImage(currentImageFileBlack);
+          data.base64Black = r.base64;
+          data.mimeBlack = r.mime;
+          info.push(`crni ${r.width}×${r.height}`);
+        }
+
+        const moves = await callVisionWithRetry(chosen, data, info.join(' | '));
+
+        if (!moves || moves.length === 0) throw new Error('AI nije prepoznao nijedan potez.');
+
+        const hasAlt = moves.some(m => m.alts && m.alts.length);
+        showStatus(
+          `✅ Cloud: prepoznato ${moves.length} poteza.` + (hasAlt ? ' ⚠️ Odstupanja između zapisnika.' : ''),
+          hasAlt ? 'warning' : 'success'
+        );
+        rawMoves = moves;
+        startValidation();
+
+      } catch (err) {
+        console.error(err);
+
+        if (err.retryable || /high demand|mrež|network|fetch/i.test(err.message)) {
+          showStatus(
+            '⚠️ Cloud AI nije dostupan (' + err.message + '). Prebacujem na lokalni TrOCR model...',
+            'warning'
+          );
+          await sleep(1500);
+          try {
+            const localMoves = await fallbackLocalRecognize();
+            showStatus(
+              `🧠 Lokalno: prepoznato ${localMoves.length} poteza. Provjeri pažljivo — lokalni model je manje točan od clouda.`,
+              'local'
+            );
+            rawMoves = localMoves;
+            startValidation();
+          } catch (localErr) {
+            showStatus('❌ Ni cloud ni lokalni model nisu uspjeli. ' + localErr.message, 'error');
+          }
+        } else {
+          showStatus('❌ ' + err.message, 'error');
+        }
+      } finally {
+        updateUI();
+      }
+    }
+
+    async function fallbackLocalRecognize() {
+      const localMoves = await localRecognizeAll();
+      if (!localMoves || !localMoves.length) {
+        throw new Error('Lokalni model nije prepoznao nijedan potez. Pokušaj s jasnijom slikom.');
+      }
+      return localMoves;
+    }
+
+    async function callVisionWithRetry(chosenModel, data, imageInfo) {
+      const chain = MODEL_CHAINS[chosenModel] || [chosenModel];
+      let lastErr = null;
+
+      for (let mi = 0; mi < chain.length; mi++) {
+        const model = chain[mi];
+        const label = modelLabel(model);
+        const isFallback = mi > 0;
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
+          try {
+            const prefix = isFallback ? `↻ Rezervni ${label}` : `⏳ ${label}`;
+            const suffix = imageInfo ? ' — ' + imageInfo : '';
+            showStatus(`${prefix} (pokušaj ${attempt}/${MAX_ATTEMPTS_PER_MODEL})${suffix}`, 'info');
+
+            if (model.startsWith('gpt')) return await callOpenAI(model, data);
+            if (detectKeyProvider(apiKey) === 'vertex') return await callVertex(model, data);
+            return await callGemini(model, data);
+          } catch (e) {
+            lastErr = e;
+            if (!e.retryable) throw e;
+
+            const hasMoreAttempts = attempt < MAX_ATTEMPTS_PER_MODEL;
+            const hasFallback = mi < chain.length - 1;
+
+            if (hasMoreAttempts) {
+              const wait = Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 800);
+              showStatus(
+                `⚠️ ${label} preopterećen. Pokušaj ${attempt + 1}/${MAX_ATTEMPTS_PER_MODEL} za ${Math.round(wait / 1000)} s...`,
+                'warning'
+              );
+              await sleep(wait);
+            } else if (hasFallback) {
+              showStatus(`⚠️ ${label} nedostupan. Prebacujem na ${modelLabel(chain[mi + 1])}...`, 'warning');
+              await sleep(1200);
+            }
+          }
+        }
+      }
+      const e = new Error(
+        'Svi cloud modeli su preopterećeni. ' +
+        (lastErr ? `(zadnja greška: ${lastErr.message})` : '')
+      );
+      e.retryable = true;
+      throw e;
+    }
+
+    // ============================================================
+    // LOKALNO PREPOZNAVANJE (ručni gumb)
+    // ============================================================
+    async function handleLocalRecognize() {
+      if (!currentImageFileWhite && !currentImageFileBlack) return;
+      localBtn.disabled = true;
+
+      try {
+        const moves = await localRecognizeAll();
+        if (!moves || !moves.length) {
+          throw new Error('Lokalni model nije prepoznao nijedan potez. Pokušaj s jasnijom slikom ili koristi cloud AI.');
+        }
+        showStatus(
+          `🧠 Lokalno: prepoznato ${moves.length} poteza. Provjeri pažljivo — lokalni model je manje točan od clouda.`,
+          'local'
+        );
+        rawMoves = moves;
+        startValidation();
+      } catch (e) {
+        showStatus('❌ ' + e.message, 'error');
+      } finally {
+        localBtn.disabled = false;
+        updateUI();
+      }
+    }
+
+    // ============================================================
+    // CLOUD API POZIVI
+    // ============================================================
+    function buildSystemPrompt(hasBoth) {
+      const base = `Ti si šahovski sudac. Prepiši šahovske poteze s priloženog rukopisnog zapisnika.
+
+PRAVILA:
+- Prevedi hrvatske/regionalne oznake figura u engleski standard: S→N, L→B, T→R, D→Q, K→K.
+- Ignoriraj vremena upisana pokraj poteza, kvačice, precrtavanja i komentare.
+- Zapisnik može biti zakrenut i imati više blokova stupaca: čitaj redom po broju poteza.
+- Prepiši točno što piše, čak i ako potez izgleda nelegalan; nemoj ga sam ispravljati.`;
+
+      const dual = hasBoth ? `
+
+DODATNO — DVA ZAPISNIKA:
+- Slika 1 = zapisnik BIJELOG igrača.
+- Slika 2 = zapisnik CRNOG igrača.
+- Usporedi ih potez po potez.
+- Ako se NE SLAŽU, vrati OBA čitanja: primarno u "san", drugu verziju u "alts".` : '';
+
+      return base + dual + `
+
+VRATI ISKLJUČIVO JSON FORMAT:
+{ "moves": [ {"san": "e4", "alts": []}, {"san": "e5", "alts": []}, {"san": "Nf3", "alts": ["Nh3"]}, ... ] }`;
+    }
+
+    function buildUserText(hasWhite, hasBlack) {
+      if (hasWhite && hasBlack) return 'Analiziraj oba zapisnika iste partije i vrati sve poteze u zadanom JSON formatu.';
+      if (hasWhite) return 'Analiziraj zapisnik bijelog igrača i vrati sve poteze u zadanom JSON formatu.';
+      return 'Analiziraj zapisnik crnog igrača i vrati sve poteze u zadanom JSON formatu.';
+    }
+
+    async function callOpenAI(model, data) {
+      const hasBoth = !!(data.base64White && data.base64Black);
+      const content = [{ type: 'text', text: buildUserText(!!data.base64White, !!data.base64Black) }];
+      if (data.base64White) {
+        content.push({ type: 'text', text: 'Slika 1 — zapisnik BIJELOG igrača:' });
+        content.push({ type: 'image_url', image_url: { url: `data:${data.mimeWhite};base64,${data.base64White}`, detail: 'high' } });
+      }
+      if (data.base64Black) {
+        content.push({ type: 'text', text: 'Slika 2 — zapisnik CRNOG igrača:' });
+        content.push({ type: 'image_url', image_url: { url: `data:${data.mimeBlack};base64,${data.base64Black}`, detail: 'high' } });
+      }
+
+      let r;
+      try {
+        r = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({
+            model,
+            max_tokens: 8192,
+            messages: [
+              { role: 'system', content: buildSystemPrompt(hasBoth) },
+              { role: 'user', content }
+            ],
+            response_format: { type: 'json_object' }
+          })
+        });
+      } catch (netErr) {
+        const e = new Error('Mrežna greška: ' + netErr.message);
+        e.retryable = true;
+        throw e;
+      }
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const e = new Error(err.error?.message || `OpenAI greška (${r.status})`);
+        e.retryable = isRetryable(r.status, err);
+        throw e;
+      }
+      const j = await r.json();
+      const txt = j.choices?.[0]?.message?.content;
+      if (!txt) throw new Error('Prazan odgovor od OpenAI.');
+      return parseMovesJSON(txt);
+    }
+
+    async function callGemini(model, data) {
+      const hasBoth = !!(data.base64White && data.base64Black);
+      const prompt = buildSystemPrompt(hasBoth) + '\n\n' + buildUserText(!!data.base64White, !!data.base64Black);
+
+      const parts = [{ text: prompt }];
+      if (data.base64White) {
+        parts.push({ text: 'Slika 1 — zapisnik BIJELOG igrača:' });
+        parts.push({ inline_data: { mime_type: data.mimeWhite, data: data.base64White } });
+      }
+      if (data.base64Black) {
+        parts.push({ text: 'Slika 2 — zapisnik CRNOG igrača:' });
+        parts.push({ inline_data: { mime_type: data.mimeBlack, data: data.base64Black } });
+      }
+
+      let r;
+      try {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: { maxOutputTokens: 16384, temperature: 0, responseMimeType: 'application/json' }
+          })
+        });
+      } catch (netErr) {
+        const e = new Error('Mrežna greška: ' + netErr.message);
+        e.retryable = true;
+        throw e;
+      }
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const e = new Error(err.error?.message || `Gemini greška (${r.status})`);
+        e.retryable = isRetryable(r.status, err);
+        throw e;
+      }
+      const j = await r.json();
+      const txt = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!txt) throw new Error('Prazan odgovor od Gemini.');
+      return parseMovesJSON(txt);
+    }
+
+    async function callVertex(model, data) {
+      const hasBoth = !!(data.base64White && data.base64Black);
+      const prompt = buildSystemPrompt(hasBoth) + '\n\n' + buildUserText(!!data.base64White, !!data.base64Black);
+
+      const parts = [{ text: prompt }];
+      if (data.base64White) {
+        parts.push({ text: 'Slika 1 — zapisnik BIJELOG igrača:' });
+        parts.push({ inline_data: { mime_type: data.mimeWhite, data: data.base64White } });
+      }
+      if (data.base64Black) {
+        parts.push({ text: 'Slika 2 — zapisnik CRNOG igrača:' });
+        parts.push({ inline_data: { mime_type: data.mimeBlack, data: data.base64Black } });
+      }
+
+      let r;
+      try {
+        r = await fetch(`https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts }],
+            generationConfig: { maxOutputTokens: 16384, temperature: 0, responseMimeType: 'application/json' }
+          })
+        });
+      } catch (netErr) {
+        const e = new Error('Mrežna greška: ' + netErr.message);
+        e.retryable = true;
+        throw e;
+      }
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const e = new Error(err.error?.message || `Vertex greška (${r.status})`);
+        e.retryable = isRetryable(r.status, err);
+        throw e;
+      }
+      const j = await r.json();
+      const txt = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!txt) throw new Error('Prazan odgovor od Vertex.');
+      return parseMovesJSON(txt);
+    }
+
+    function parseMovesJSON(content) {
+      let s = content.trim();
+      if (s.startsWith('```')) s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      const p = JSON.parse(s);
+      if (!p.moves || !Array.isArray(p.moves)) throw new Error('AI nije vratio format { "moves": [...] }.');
+      return p.moves.map(m => {
+        if (typeof m === 'string') return { san: m.trim(), alts: [] };
+        if (m && typeof m === 'object') {
+          const san = String(m.san || '').trim();
+          const alts = Array.isArray(m.alts) ? m.alts.map(String).map(x => x.trim()).filter(Boolean) : [];
+          return { san, alts };
+        }
+        return null;
+      }).filter(x => x && x.san);
+    }
+
+    // ============================================================
+    // VALIDATOR
+    // ============================================================
+    function startValidation() {
+      chess = new Chess();
+      validatedMoves = [];
+      repairNotes = [];
+      currentIndex = 0;
+      validatorCard.classList.remove('hidden');
+      interventionArea.classList.add('hidden');
+      validationComplete.classList.add('hidden');
+      pgnHeaderCard.classList.add('hidden');
+      exportCard.classList.add('hidden');
+      pgnOutput.classList.remove('visible');
+      moveListContainer.innerHTML = '';
+      runValidation();
+    }
+
+    function tryMove(game, token) {
+      token = cleanTok(token);
+      try { const m = game.move(token); if (m) return m; } catch (e) {}
+      const t = normTok(token);
+      const c = game.moves({ verbose: true }).filter(m => normTok(m.san) === t);
+      if (c.length === 1) { try { return game.move(c[0].san); } catch (e) {} }
+      return null;
+    }
+
+    function tryEntry(game, entry) {
+      let m = tryMove(game, entry.san);
+      if (m) return { move: m, usedAlt: null };
+      if (entry.alts && entry.alts.length) {
+        for (const alt of entry.alts) {
+          m = tryMove(game, alt);
+          if (m) return { move: m, usedAlt: alt };
+        }
+      }
+      return { move: null, usedAlt: null };
+    }
+
+    function autoCorrect(game, token) {
+      const t = normTok(cleanTok(token)).toLowerCase();
+      const ds = game.moves().map(s => ({ s, d: levenshtein(t, normTok(s).toLowerCase()) }));
+      const min = Math.min(...ds.map(x => x.d));
+      const best = ds.filter(x => x.d === min);
+      if (min <= 1 && best.length === 1) { try { return game.move(best[0].s); } catch (e) {} }
+      return null;
+    }
+
+    function tryBacktrack(i) {
+      let best = null;
+      for (let k = i - 1; k >= Math.max(0, i - 10); k--) {
+        const vm = validatedMoves[k];
+        if (!vm || !vm.fenBefore) continue;
+        const target = normTok(cleanTok(vm.original)).toLowerCase();
+        const cands = new Chess(vm.fenBefore).moves()
+          .filter(s => s !== vm.san && levenshtein(normTok(s).toLowerCase(), target) <= 2);
+        for (const s of cands) {
+          const g = new Chess(vm.fenBefore);
+          g.move(s);
+          let reach = k + 1;
+          while (reach < rawMoves.length && tryEntry(g, rawMoves[reach]).move) reach++;
+          const d = levenshtein(normTok(s).toLowerCase(), target);
+          const ok = reach >= i + 2 || reach === rawMoves.length;
+          if (ok && (!best || reach > best.reach || (reach === best.reach && (d < best.d || (d === best.d && k > best.k))))) {
+            best = { k, san: s, reach, d };
+          }
+        }
+      }
+      return best;
+    }
+
+    function runValidation() {
+      let fixes = 0;
+      while (currentIndex < rawMoves.length) {
+        const entry = rawMoves[currentIndex];
+        const before = chess.fen();
+        let m = null, corrected = false, usedAlt = null;
+
+        const primary = tryMove(chess, entry.san);
+        if (primary) m = primary;
+
+        if (!m && entry.alts && entry.alts.length) {
+          for (const alt of entry.alts) {
+            const mm = tryMove(chess, alt);
+            if (mm) { m = mm; usedAlt = alt; corrected = true; break; }
+          }
+        }
+        if (!m) { const ac = autoCorrect(chess, entry.san); if (ac) { m = ac; corrected = true; } }
+        if (!m) {
+          const fix = fixes < 4 ? tryBacktrack(currentIndex) : null;
+          if (fix) {
+            fixes++;
+            const vm = validatedMoves[fix.k];
+            chess = new Chess(vm.fenBefore);
+            validatedMoves.length = fix.k;
+            const mm = chess.move(fix.san);
+            validatedMoves.push({ san: mm.san, corrected: true, original: vm.original, usedAlt: null, status: 'auto-corrected', fenBefore: vm.fenBefore });
+            repairNotes.push(`${Math.floor(fix.k/2)+1}${fix.k%2 ? '...' : '.'} ${vm.original} → ${mm.san}`);
+            currentIndex = fix.k + 1;
+            continue;
+          }
+          updateMoveList();
+          showIntervention(entry);
+          return;
+        }
+
+        validatedMoves.push({ san: m.san, corrected, original: entry.san, usedAlt, status: corrected ? 'auto-corrected' : 'correct', fenBefore: before });
+        currentIndex++;
+      }
+
+      updateMoveList();
+      validationComplete.innerHTML =
+        '<p style="color:var(--success);font-weight:600;">✅ Svi potezi su legalni.</p>' +
+        (repairNotes.length ? '<p class="text-muted" style="color:var(--warning)">⚠️ Automatski ispravljeno: ' + repairNotes.join('; ') + '</p>' : '');
+      validationComplete.classList.remove('hidden');
+      interventionArea.classList.add('hidden');
+      pgnHeaderCard.classList.remove('hidden');
+      exportCard.classList.remove('hidden');
+      generatePGN();
+    }
+
+    function updateMoveList() {
+      let html = '';
+      for (let i = 0; i < validatedMoves.length; i++) {
+        const m = validatedMoves[i];
+        const num = Math.floor(i / 2) + 1;
+        const prefix = i % 2 === 0 ? `${num}.` : `${num}...`;
+        const cls = m.status === 'correct' ? 'correct' : 'auto-corrected';
+        let suffix = '';
+        if (m.corrected) suffix = m.usedAlt ? ` (AI: ${m.original} → ${m.usedAlt})` : ` (AI: ${m.original})`;
+        html += `<span class="${cls}">${prefix} ${m.san}${suffix}</span> `;
+      }
+      moveListContainer.innerHTML = html;
+      moveListContainer.scrollTop = moveListContainer.scrollHeight;
+    }
+
+    function showIntervention(entry) {
+      interventionArea.classList.remove('hidden');
+      let txt = entry.san;
+      if (entry.alts && entry.alts.length) txt += ' (moguće: ' + entry.alts.join(', ') + ')';
+      illegalMoveDisplay.textContent = txt;
+      miniBoard.textContent = fenToUnicodeBoard(chess.fen());
+
+      const legalMoves = chess.moves({ verbose: true });
+      legalMovesGrid.innerHTML = '';
+      const altSet = new Set(entry.alts || []);
+      const sorted = [...legalMoves].sort((a, b) => (altSet.has(a.san) ? 0 : 1) - (altSet.has(b.san) ? 0 : 1));
+
+      sorted.forEach(m => {
+        const btn = document.createElement('button');
+        btn.textContent = m.san;
+        if (altSet.has(m.san)) { btn.classList.add('suggested'); btn.title = 'Predloženo iz drugog zapisnika'; }
+        btn.addEventListener('click', () => {
+          try {
+            const before = chess.fen();
+            const mv = chess.move(m.san);
+            if (mv) {
+              validatedMoves.push({ san: mv.san, corrected: false, original: entry.san, usedAlt: null, status: 'correct', fenBefore: before });
+              currentIndex++;
+              interventionArea.classList.add('hidden');
+              updateMoveList();
+              runValidation();
+            }
+          } catch (e) { showStatus('Greška pri odabiru poteza: ' + e.message, 'error'); }
+        });
+        legalMovesGrid.appendChild(btn);
+      });
+
+      interventionHint.textContent = altSet.size
+        ? 'Žuti gumbi su predloženi iz drugog zapisnika. Odaberite ispravan potez:'
+        : 'Odaberite legalni potez:';
+
+      let html = moveListContainer.innerHTML;
+      html += `<span class="illegal">${entry.san} ← odaberite ispravan potez</span>`;
+      moveListContainer.innerHTML = html;
+      moveListContainer.scrollTop = moveListContainer.scrollHeight;
+    }
+
+    // ============================================================
+    // PGN
+    // ============================================================
+    function generatePGN() {
+      if (!validatedMoves.length) return;
+      const headers = {
+        Event:    document.getElementById('hEvent').value.trim()    || '?',
+        Site:     document.getElementById('hSite').value.trim()     || '?',
+        Date:     isoToPgnDate(document.getElementById('hDate').value),
+        Round:    document.getElementById('hRound').value.trim()    || '?',
+        White:    document.getElementById('hWhite').value.trim()    || '?',
+        WhiteElo: document.getElementById('hWhiteElo').value.trim() || '?',
+        Black:    document.getElementById('hBlack').value.trim()    || '?',
+        BlackElo: document.getElementById('hBlackElo').value.trim() || '?',
+        Result:   document.getElementById('hResult').value          || '*'
+      };
+      const tmp = new Chess();
+      for (const m of validatedMoves) tmp.move(m.san);
+      tmp.setHeader('Event', headers.Event);
+      tmp.setHeader('Site', headers.Site);
+      tmp.setHeader('Date', headers.Date);
+      tmp.setHeader('Round', headers.Round);
+      tmp.setHeader('White', headers.White);
+      tmp.setHeader('WhiteElo', headers.WhiteElo);
+      tmp.setHeader('Black', headers.Black);
+      tmp.setHeader('BlackElo', headers.BlackElo);
+      tmp.setHeader('Result', headers.Result);
+      pgnOutput.textContent = tmp.pgn();
+      pgnOutput.classList.add('visible');
+    }
+
+    function buildPgnFileName() {
+      const w = document.getElementById('hWhite').value.trim() || 'bijeli';
+      const b = document.getElementById('hBlack').value.trim() || 'crni';
+      const r = document.getElementById('hRound').value.trim() || 'kolo';
+      return safeFileName(`partija_${w}_${b}_${r}.pgn`);
+    }
+
+    function triggerPgnDownload() {
+      const pgn = pgnOutput.textContent;
+      if (!pgn) return false;
+      const blob = new Blob([pgn], { type: 'application/x-chess-pgn' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildPgnFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    }
+
+    function downloadPGN() {
+      if (!pgnOutput.textContent) { showStatus('Prvo validirajte poteze.', 'error'); return; }
+      triggerPgnDownload();
+      showStatus('✅ PGN datoteka preuzeta.', 'success');
+    }
+
+    function exportForChessBase() {
+      if (!pgnOutput.textContent) {
+        showStatus('Prvo validirajte poteze kako bi se generirao PGN.', 'error');
+        return;
+      }
+      triggerPgnDownload();
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        showStatus('✅ PGN preuzet. ChessBase je desktop aplikacija — prenesi datoteku na računalo i otvori je dvoklikom.', 'info');
+      } else {
+        showStatus('✅ PGN preuzet. ChessBase obično automatski otvara .pgn dvoklikom.', 'success');
+      }
+    }
+
+    async function copyPGN() {
+      const pgn = pgnOutput.textContent;
+      if (!pgn) { showStatus('Prvo validirajte poteze.', 'error'); return; }
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(pgn);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = pgn;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        const btn = document.getElementById('copyBtn');
+        const orig = btn.textContent;
+        btn.textContent = '✅ Kopirano!';
+        setTimeout(() => btn.textContent = orig, 2000);
+      } catch (e) {
+        showStatus('Kopiranje nije uspjelo: ' + e.message, 'error');
+      }
+    }
+
+    async function sharePGN() {
+      const pgn = pgnOutput.textContent;
+      if (!pgn) { showStatus('Prvo validirajte poteze.', 'error'); return; }
+      if (navigator.share) {
+        try { await navigator.share({ title: 'PGN zapis partije', text: pgn }); }
+        catch (e) { if (e.name !== 'AbortError') showStatus('Dijeljenje nije uspjelo.', 'info'); }
+      } else {
+        copyPGN();
+        showStatus('Preglednik ne podržava dijeljenje. PGN je kopiran u međuspremnik!', 'info');
+      }
+    }
+
+    function toggleHeader() {
+      document.getElementById('headerContent').classList.toggle('open');
+      document.getElementById('headerToggle').classList.toggle('open');
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  </script>
+</body>
+</html>
