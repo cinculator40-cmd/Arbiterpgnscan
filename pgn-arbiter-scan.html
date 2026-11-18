@@ -153,6 +153,42 @@
       white-space: pre; letter-spacing: 1px;
     }
 
+    .board-grid {
+      display: grid; grid-template-columns: repeat(8, 1fr);
+      width: 100%; max-width: 336px; margin-top: 8px;
+      border-radius: 8px; overflow: hidden;
+      border: 2px solid var(--surface-2);
+    }
+    .board-grid .sq {
+      aspect-ratio: 1; position: relative;
+      display: flex; align-items: center; justify-content: center;
+      font-size: clamp(18px, 5.5vw, 28px); line-height: 1;
+      cursor: pointer; user-select: none;
+    }
+    .board-grid .sq.light { background: #f0d9b5; }
+    .board-grid .sq.dark  { background: #b58863; }
+    .board-grid .sq.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+    .board-grid .sq.target::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle, rgba(34,197,94,0.55) 22%, rgba(34,197,94,0) 46%);
+      pointer-events: none;
+    }
+    .board-grid .pc.pc-w {
+      color: #fff;
+      text-shadow: -1px -1px 0 #444, 1px -1px 0 #444, -1px 1px 0 #444, 1px 1px 0 #444;
+    }
+    .board-grid .pc.pc-b {
+      color: #111;
+      text-shadow: -1px -1px 0 #ccc, 1px -1px 0 #ccc, -1px 1px 0 #ccc, 1px 1px 0 #ccc;
+    }
+    .board-grid .sq[data-sq$="1"]::before,
+    .board-grid .sq[data-sq$="8"]::before {
+      content: attr(data-sq-a);
+      position: absolute; left: 2px; top: 1px;
+      font: 700 9px system-ui, sans-serif; opacity: 0.55;
+    }
+
     .collapsible-header {
       cursor: pointer; display: flex; justify-content: space-between;
       align-items: center; user-select: none;
@@ -352,6 +388,8 @@
       <div id="miniBoard" class="unicode-board"></div>
       <p class="text-muted mt-8" id="interventionHint">Odaberite legalni potez:</p>
       <div id="legalMovesGrid" class="legal-moves-grid"></div>
+      <p class="text-muted mt-8" style="font-size:0.75rem;">Klikni figuru na ploči, pa destinaciju — ili odaberi gumb ispod. Također: klikni bilo koji potez u listi gore za uređivanje.</p>
+      <button type="button" class="btn-secondary mt-8" id="editCancelBtn" style="display:none">↩️ Odustani od uređivanja</button>
     </div>
     <div id="validationComplete" class="hidden"></div>
   </div>
@@ -448,6 +486,7 @@
     let validatedMoves = [];
     let repairNotes = [];
     let currentIndex = 0;
+    let editMode = null;
 
     let currentImageFileWhite = null;
     let currentImageFileBlack = null;
@@ -465,6 +504,7 @@
     const statusMsg          = document.getElementById('statusMsg');
     const validatorCard      = document.getElementById('validatorCard');
     const moveListContainer  = document.getElementById('moveListContainer');
+    const editCancelBtn      = document.getElementById('editCancelBtn');
     const interventionArea   = document.getElementById('interventionArea');
     const illegalMoveDisplay = document.getElementById('illegalMoveDisplay');
     const interventionHint   = document.getElementById('interventionHint');
@@ -960,6 +1000,18 @@
       document.getElementById('chessbaseBtn').addEventListener('click', exportForChessBase);
       document.getElementById('copyBtn').addEventListener('click', copyPGN);
       document.getElementById('shareBtn').addEventListener('click', sharePGN);
+      document.getElementById('editCancelBtn').addEventListener('click', cancelEdit);
+      moveListContainer.addEventListener('click', ev => {
+        if (editMode) return;
+        const el = ev.target && ev.target.closest ? ev.target.closest('[data-i]') : null;
+        if (el) editMove(parseInt(el.dataset.i, 10));
+      });
+      document.getElementById('editCancelBtn').addEventListener('click', cancelEdit);
+      moveListContainer.addEventListener('click', ev => {
+        if (editMode) return;
+        const el = ev.target && ev.target.closest ? ev.target.closest('[data-i]') : null;
+        if (el) editMove(parseInt(el.dataset.i, 10));
+      });
 
       document.querySelectorAll('.header-field').forEach(el => {
         el.addEventListener('input', generatePGN);
@@ -1462,9 +1514,10 @@ VRATI ISKLJUČIVO JSON FORMAT:
       validatorCard.classList.remove('hidden');
       interventionArea.classList.add('hidden');
       validationComplete.classList.add('hidden');
-      pgnHeaderCard.classList.add('hidden');
-      exportCard.classList.add('hidden');
-      pgnOutput.classList.remove('visible');
+      pgnHeaderCard.classList.remove('hidden');
+      exportCard.classList.remove('hidden');
+      pgnOutput.textContent = 'PGN se generira kako potvrđuješ poteze…';
+      pgnOutput.classList.add('visible');
       moveListContainer.innerHTML = '';
       runValidation();
     }
@@ -1580,19 +1633,98 @@ VRATI ISKLJUČIVO JSON FORMAT:
         const prefix = i % 2 === 0 ? `${num}.` : `${num}...`;
         const cls = m.status === 'correct' ? 'correct' : 'auto-corrected';
         let suffix = '';
-        if (m.corrected) suffix = m.usedAlt ? ` (AI: ${m.original} → ${m.usedAlt})` : ` (AI: ${m.original})`;
-        html += `<span class="${cls}">${prefix} ${m.san}${suffix}</span> `;
+        if (m.corrected) suffix = m.usedAlt ? ` (AI: ${m.original} \u2192 ${m.usedAlt})` : ` (AI: ${m.original})`;
+        html += `<span class="${cls}" data-i="${i}" style="cursor:pointer" title="Klikni za uređivanje ovog poteza">${prefix} ${m.san}${suffix}</span> `;
       }
       moveListContainer.innerHTML = html;
       moveListContainer.scrollTop = moveListContainer.scrollHeight;
+      generatePGN();
     }
 
-    function showIntervention(entry) {
+    const PIECE_UNICODE = {
+      w: { p: '\u2659', n: '\u2658', b: '\u2657', r: '\u2656', q: '\u2655', k: '\u2654' },
+      b: { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' }
+    };
+
+    /**
+     * Interaktivna 8x8 ploča: klik na figuru je odabir, klik na označeno
+     * polje su mete poteza (onMove). Poziciju uzima iz chess.js board() stanja.
+     */
+    function renderBoard(container, game, onMove) {
+      container.className = 'board-grid';
+      container.innerHTML = '';
+      const board = game.board();
+      let selFrom = null;
+
+      for (let r = 0; r < 8; r++) {
+        for (let f = 0; f < 8; f++) {
+          const sqName = 'abcdefgh'[f] + (8 - r);
+          const sq = document.createElement('div');
+          sq.className = 'sq ' + (((r + f) % 2 === 0) ? 'light' : 'dark');
+          sq.dataset.sq = sqName;
+          sq.dataset.sqA = 'abcdefgh'[f];
+          const p = board[r][f];
+          if (p) {
+            const sp = document.createElement('span');
+            sp.className = 'pc ' + (p.color === 'w' ? 'pc-w' : 'pc-b');
+            sp.textContent = PIECE_UNICODE[p.color][p.type];
+            sq.appendChild(sp);
+          }
+          sq.addEventListener('click', () => {
+            const legal = game.moves({ verbose: true });
+            const targets = selFrom ? legal.filter(m => m.from === selFrom) : [];
+            const hit = targets.find(m => m.to === sqName);
+            if (hit) { onMove(hit.san); return; }
+            const selectable = legal.some(m => m.from === sqName);
+            selFrom = (selFrom === sqName || !selectable) ? null : sqName;
+            [...container.querySelectorAll('.sq')].forEach(el => el.classList.remove('sel', 'target'));
+            if (selFrom) {
+              const sel = container.querySelector('[data-sq="' + selFrom + '"]');
+              if (sel) sel.classList.add('sel');
+              legal.filter(m => m.from === selFrom).forEach(m => {
+                const t = container.querySelector('[data-sq="' + m.to + '"]');
+                if (t) t.classList.add('target');
+              });
+            }
+          });
+          container.appendChild(sq);
+        }
+      }
+    }
+
+    function commitInterventionMove(entry, san, isEdit) {
+      try {
+        const before = chess.fen();
+        const mv = chess.move(san);
+        if (!mv) throw new Error('potez nije legalan');
+        validatedMoves.push({
+          san: mv.san,
+          corrected: isEdit,
+          original: entry.san,
+          usedAlt: null,
+          status: isEdit ? 'auto-corrected' : 'correct',
+          fenBefore: before
+        });
+        if (isEdit) {
+          const k = editMode ? editMode.index : 0;
+          repairNotes.push('ure\u0111eno: ' + (Math.floor(k / 2) + 1) + (k % 2 ? '...' : '.') + ' ' + entry.san + ' \u2192 ' + mv.san);
+          endEdit();
+        }
+        currentIndex++;
+        interventionArea.classList.add('hidden');
+        updateMoveList();
+        runValidation();
+      } catch (e) {
+        showStatus('Gre\u0161ka pri odabiru poteza: ' + e.message, 'error');
+      }
+    }
+
+    function showIntervention(entry, isEdit = false) {
       interventionArea.classList.remove('hidden');
       let txt = entry.san;
-      if (entry.alts && entry.alts.length) txt += ' (moguće: ' + entry.alts.join(', ') + ')';
-      illegalMoveDisplay.textContent = txt;
-      miniBoard.textContent = fenToUnicodeBoard(chess.fen());
+      if (entry.alts && entry.alts.length) txt += ' (mogu\u0107e: ' + entry.alts.join(', ') + ')';
+      illegalMoveDisplay.textContent = (isEdit ? 'ure\u0111uje\u0161 potez: ' : '') + txt;
+      renderBoard(miniBoard, chess, san => commitInterventionMove(entry, san, isEdit));
 
       const legalMoves = chess.moves({ verbose: true });
       legalMovesGrid.innerHTML = '';
@@ -1602,31 +1734,46 @@ VRATI ISKLJUČIVO JSON FORMAT:
       sorted.forEach(m => {
         const btn = document.createElement('button');
         btn.textContent = m.san;
-        if (altSet.has(m.san)) { btn.classList.add('suggested'); btn.title = 'Predloženo iz drugog zapisnika'; }
-        btn.addEventListener('click', () => {
-          try {
-            const before = chess.fen();
-            const mv = chess.move(m.san);
-            if (mv) {
-              validatedMoves.push({ san: mv.san, corrected: false, original: entry.san, usedAlt: null, status: 'correct', fenBefore: before });
-              currentIndex++;
-              interventionArea.classList.add('hidden');
-              updateMoveList();
-              runValidation();
-            }
-          } catch (e) { showStatus('Greška pri odabiru poteza: ' + e.message, 'error'); }
-        });
+        if (altSet.has(m.san)) { btn.classList.add('suggested'); btn.title = 'Predlo\u017eeno iz drugog zapisnika'; }
+        btn.addEventListener('click', () => commitInterventionMove(entry, m.san, isEdit));
         legalMovesGrid.appendChild(btn);
       });
 
       interventionHint.textContent = altSet.size
-        ? 'Žuti gumbi su predloženi iz drugog zapisnika. Odaberite ispravan potez:'
-        : 'Odaberite legalni potez:';
+        ? 'Klikni figuru na plo\u010di pa odredi\u0161te \u2014 \u017euti gumbi su predlozi iz drugog zapisnika:'
+        : 'Klikni figuru na plo\u010di pa odredi\u0161te, ili odaberi gumb ispod:';
 
       let html = moveListContainer.innerHTML;
-      html += `<span class="illegal">${entry.san} ← odaberite ispravan potez</span>`;
+      html += `<span class="illegal">${entry.san} \u2190 ${isEdit ? 'unesi ispravan potez' : 'odaberite ispravan potez'}</span>`;
       moveListContainer.innerHTML = html;
       moveListContainer.scrollTop = moveListContainer.scrollHeight;
+    }
+
+    function editMove(i) {
+      if (editMode) return;
+      const vm = validatedMoves[i];
+      if (!vm || !vm.fenBefore) return;
+      editMode = { index: i, snapshot: validatedMoves.slice(), fen: chess.fen(), index0: currentIndex };
+      chess = new Chess(vm.fenBefore);
+      validatedMoves.length = i;
+      currentIndex = i;
+      updateMoveList();
+      showIntervention(rawMoves[i] || { san: vm.original, alts: [] }, true);
+    }
+
+    function endEdit() {
+      editMode = null;
+      editCancelBtn.style.display = 'none';
+    }
+
+    function cancelEdit() {
+      if (!editMode) return;
+      validatedMoves = editMode.snapshot;
+      chess = new Chess(editMode.fen);
+      currentIndex = editMode.index0;
+      endEdit();
+      interventionArea.classList.add('hidden');
+      updateMoveList();
     }
 
     // ============================================================
